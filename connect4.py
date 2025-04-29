@@ -1,6 +1,7 @@
 import random
 import math 
-from queue import Queue
+import csv
+import os
 
 ROWS = 6
 COLS = 7
@@ -18,7 +19,7 @@ class MCTSNode:
 
     def ucb1(self, total_simulations, c=1.41):
         if self.visits == 0:
-            return float('inf')  # Encourage exploration
+            return float('inf')  
         win_rate = self.wins / self.visits
         return win_rate + c * math.sqrt(math.log(total_simulations) / self.visits)
 
@@ -84,6 +85,9 @@ def get_valid_moves(board):
 
     return [column for column in range(COLS) if is_valid_move(board, column)]
 
+def board_to_string(board):
+    return ''.join([str(cell) for row in board for cell in row])
+
 def get_random_move(**kwargs):
     board = kwargs.get("board")
     
@@ -96,7 +100,7 @@ def MCTS(**kwargs):
     iterations = kwargs.get("iterations", 500)
     bestchild = kwargs.get("bestchild", bestchild_default)
     backprograming = kwargs.get("backprograming", backprograming_default)
-    c = kwargs.get("c", 1.41)
+    c = kwargs.get("c", 2.0)
     debug=False
     for _ in range(iterations):
         node = selection(root,c=c)
@@ -134,11 +138,7 @@ def selection(node: MCTSNode, c=1.41):
         if not node.children:
             return node
 
-        unvisited = [child for child in node.children if child.visits == 0]
-        if unvisited:
-            return random.choice(unvisited)
-
-        node = max(node.children, key=lambda child: child.ucb1(node.visits))
+        node = max(node.children, key=lambda child: child.ucb1(node.visits,c))
 
 def expansion(node: MCTSNode,debug=False) ->MCTSNode:
     
@@ -218,12 +218,14 @@ def backprograming_default(node : MCTSNode,result):
 def backprograming_greddy(node : MCTSNode,result):
 
     while node is not None:
-
         node.visits+=1
 
-        if result==  node.player:
+        if result== node.player: #nao faco a minima porque e que funciona em vez de 3-player
+            
             node.wins+=1
 
+        elif result==0:
+            node.wins+=0.15
         node=node.parent
 
 def bestchild_default(node: MCTSNode):
@@ -350,7 +352,7 @@ def simulate_game(ai1,ai2,silent=True):
             pass
 
     
-
+    game_data=[]
     
     while True:
        
@@ -362,13 +364,27 @@ def simulate_game(ai1,ai2,silent=True):
                 print(f"Player {winner} ({'X' if winner == 1 else 'O'}) wins!")
             else:
                 print("It's a draw!")
+
+            
+            save_to_csv(game_data)  # Salva os dados no CSV
+            
             return winner
 
         if turn==1:
             col=ai1(board=board,root=root1)
+            if root1:
+                game_data.append({
+                'state': board_to_string(board),
+                'move': col,
+                })
         else:
             col=ai2(board=board,root=root2)
-        
+            if root2:
+                game_data.append({
+                'state': board_to_string(board),
+                'move': col,   
+                }) 
+
         row=get_next_open_row(board,col)
         drop_piece(board,row,col,turn)
 
@@ -379,19 +395,22 @@ def simulate_game(ai1,ai2,silent=True):
 
         if root1:
             root1=update_root(root1,board,col,turn)
+          
+                  
         if root2:
             root2=update_root(root2,board,col,turn)
 
+            
+ 
         turn= 3-turn
     
-
 def select_mcts_parameters(
     c=1.41,
     iterations=1000,
     bestchild_name="bestchild_default",
     backprograming_name="backprograming_default"
 ):
-    # Dicionário de funções disponíveis
+
     bestchild_options = {
         "bestchild_default":  bestchild_default,
         "bestchild_higherVisits": bestchild_higherVisits
@@ -402,7 +421,7 @@ def select_mcts_parameters(
         "backprograming_greddy": backprograming_greddy
     }
 
-    # Verifica se os nomes fornecidos existem
+   
     if bestchild_name not in bestchild_options:
         raise ValueError(f"Função bestchild '{bestchild_name}' não encontrada.")
     if backprograming_name not in backprograming_options:
@@ -499,6 +518,28 @@ def play():
         benchmark_menu()
     else:
         print("Invalid mode! Choose 'pvp' (Player vs Player), 'pvc' (Player vs Computer), or 'benchmark' (Computer vs Computer).")
+
+
+
+def save_to_csv(data, filename="mcts_moves.csv"):
+    fieldnames = [f"s{i}" for i in range(42)] + ["move"]
+
+    write_header = not os.path.exists(filename)
+
+    with open(filename, mode='a', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+
+        if write_header:
+            writer.writeheader()
+
+        for entry in data:
+            state_str = entry['state'] 
+            move = entry['move']
+
+            row = {f"s{i}": int(state_str[i]) for i in range(42)}
+            row["move"] = move
+
+            writer.writerow(row)
 
 play()
 
